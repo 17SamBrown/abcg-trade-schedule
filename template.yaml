@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ABCG Trade Schedule Confirmation - weekly dispatch, trade response form, PM/RC notification
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  FormBaseUrl:
+    Type: String
+    Description: Public URL of the static form, e.g. https://schedule.abcg.com.au
+  SenderEmail:
+    Type: String
+    Default: trades@abcg.com.au
+  TestModeRecipient:
+    Type: String
+    Default: sam@abcg.com.au
+    Description: When TestMode is true, every notification goes here instead of the real PM
+  TestMode:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  PulseSecretArn:
+    Type: String
+    Default: arn:aws:secretsmanager:ap-southeast-2:276483283700:secret:abcg/pulse2-rr-FHXj6k
+    Description: Existing pulse_2 read replica credentials from the Job Intelligence Agent build
+  PrivateSubnetId:
+    Type: String
+    Default: subnet-02f867b1d35160325
+    Description: Private subnet routing through the NAT gateway on 15.135.13.218
+  LambdaSecurityGroupId:
+    Type: String
+    Default: sg-05cb2ec2a22ce8bab
+    Description: Security group permitted egress to the Codafication RDS replica
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref DispatchTable
+        STAGE: !Ref Stage
+        FORM_BASE_URL: !Ref FormBaseUrl
+        SENDER_EMAIL: !Ref SenderEmail
+        TEST_MODE: !Ref TestMode
+        TEST_MODE_RECIPIENT: !Ref TestModeRecipient
+        PULSE_SECRET_ARN: !Ref PulseSecretArn
+        WRITE_BACK_ENABLED: 'false' 
+        NOTIFY_TOPIC_ARN: !Ref NotifyTopic
+    Tags:
+      Project: TradeScheduleConfirmation
+
+Resources:
+
+  # ---------- storage ----------
+  DispatchTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub abcg-trade-dispatch-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: vendor_id
+          AttributeType: S
+        - AttributeName: week_of
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: vendor-week-index
+          KeySchema:
+            - AttributeName: vendor_id
+              KeyType: HASH
+            - AttributeName: week_of
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ---------- fan-out on submission ----------
+  NotifyTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub abcg-trade-response-${Stage}
+
+  # ---------- weekly send ----------
+  DispatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub abcg-trade-dispatch-${Stage}
+      CodeUri: src/
+      Handler: dispatch.app.handler
+      Timeout: 900
+      MemorySize: 1024
+      # Only this function reads pulse_2, so only this one sits in the VPC.
+      # Its outbound traffic leaves via the NAT gateway wearing 15.135.13.218,
+      # which Codafication has whitelisted. Do not rebuild the NAT or release
+      # the Elastic IP - the whitelist would break.
+      VpcConfig:
+        SubnetIds:
+          - !Ref PrivateSubnetId
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DispatchTable
+        - SESCrudPolicy:
+            IdentityName: !Ref SenderEmail
+        - AWSLambdaVPCAccessExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref PulseSecretArn
+      Events:
+        Weekly:
+          Type: Schedule
+          Properties:
+            # 06:00 Monday AEST = 20:00 Sunday UTC
+            Schedule: cron(0 20 ? * SUN *)
+            Enabled: false   # flip to true once the manual pilot passes
+            Name: !Sub abcg-trade-weekly-${Stage}
+
+  # ---------- one-shot schema discovery ----------
+  DiscoverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub abcg-trade-discover-${Stage}
+      CodeUri: src/
+      Handler: discover.app.handler
+      Timeout: 120
+      VpcConfig:
+        SubnetIds:
+          - !Ref PrivateSubnetId
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref PulseSecretArn
+
+  # ---------- trade-facing API ----------
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub abcg-trade-api-${Stage}
+      CodeUri: src/
+      Handler: api.app.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DispatchTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotifyTopic.TopicName
+      Events:
+        GetJobs:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/schedule
+            Method: GET
+        PostResponses:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/schedule
+            Method: POST
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins: [!Ref FormBaseUrl]
+        AllowHeaders: [content-type]
+        AllowMethods: [GET, POST, OPTIONS]
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 20
+
+  # ---------- PM and RC notification ----------
+  NotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub abcg-trade-notify-${Stage}
+      CodeUri: src/
+      Handler: notify.app.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DispatchTable
+        - SESCrudPolicy:
+            IdentityName: !Ref SenderEmail
+      Events:
+        OnResponse:
+          Type: SNS
+          Properties:
+            Topic: !Ref NotifyTopic
+
+  # ---------- static form hosting ----------
+  FormBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub abcg-trade-form-${Stage}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  ApiEndpoint:
+    Description: Point the form's API_BASE at this
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  TableName:
+    Value: !Ref DispatchTable
+  FormBucket:
+    Value: !Ref FormBucket
+  DispatchFunctionName:
+    Description: Invoke manually for the pilot
+    Value: !Ref DispatchFunction
+  DiscoverFunctionName:
+    Description: Run this first to confirm the schema
+    Value: !Ref DiscoverFunction

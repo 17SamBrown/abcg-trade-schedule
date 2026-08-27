@@ -1,0 +1,31 @@
+# SAM build output
+.aws-sam/
+samconfig.toml
+
+# local run output and logs
+out/
+logs/
+*.log
+
+# lambda invoke results
+send*.json
+diag*.json
+baseline*.json
+out.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# never commit credentials
+*.pem
+*.key
+.env

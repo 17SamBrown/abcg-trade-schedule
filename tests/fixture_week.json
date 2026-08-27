@@ -1,0 +1,88 @@
+{
+  "vendor": {
+    "id": "v-coastline",
+    "name": "Coastline Roofing Pty Ltd",
+    "contact": "Dave Petrakis",
+    "email": "dave@coastlineroofing.com.au",
+    "mobile": "0412 555 118"
+  },
+  "claim_jobs": [
+    {
+      "claim_id": "C-1001",
+      "addr": "14 Marlin Street",
+      "suburb": "Wynnum QLD 4178",
+      "pm_name": "Trevor Conroy",
+      "pm_email": "trevor.conroy@abcg.com.au",
+      "pm_id": "u-trevor",
+      "rc_name": "Alice Nguyen",
+      "rc_email": "alice.nguyen@abcg.com.au",
+      "activities": [
+        {"id": "C1001-a1", "po": "48200", "activity": "Scaffold", "vendor_id": "v-scaffold", "vendor_name": "Bayside Scaffold", "start": "2026-08-24", "finish": "2026-08-24", "predecessors": [], "lag_days": 0},
+        {"id": "C1001-a2", "po": "48205", "activity": "Electrical isolation", "vendor_id": "v-voltix", "vendor_name": "Voltix Electrical", "start": "2026-08-25", "finish": "2026-08-25", "predecessors": ["C1001-a1"], "lag_days": 0},
+        {"id": "C1001-a3", "po": "48213", "activity": "Strip and re-sheet roof, tile to metal", "vendor_id": "v-coastline", "vendor_name": "Coastline Roofing Pty Ltd", "start": "2026-08-26", "finish": "2026-08-28", "predecessors": ["C1001-a2"], "lag_days": 0},
+        {"id": "C1001-a4", "po": "48221", "activity": "Electrical reconnect", "vendor_id": "v-voltix", "vendor_name": "Voltix Electrical", "start": "2026-08-31", "finish": "2026-08-31", "predecessors": ["C1001-a3"], "lag_days": 0},
+        {"id": "C1001-a5", "po": "48226", "activity": "Downpipes and stormwater", "vendor_id": "v-northside", "vendor_name": "Northside Plumbing", "start": "2026-09-02", "finish": "2026-09-02", "predecessors": ["C1001-a3"], "lag_days": 0}
+      ]
+    },
+    {
+      "claim_id": "C-1002",
+      "addr": "41 Oxley Road",
+      "suburb": "Corinda QLD 4075",
+      "pm_name": "Trevor Conroy",
+      "pm_email": "trevor.conroy@abcg.com.au",
+      "pm_id": "u-trevor",
+      "rc_name": "Alice Nguyen",
+      "rc_email": "alice.nguyen@abcg.com.au",
+      "activities": [
+        {"id": "C1002-b1", "po": "48090", "activity": "Roof restoration", "vendor_id": "v-coastline", "vendor_name": "Coastline Roofing Pty Ltd", "start": "2026-08-21", "finish": "2026-08-24", "predecessors": [], "lag_days": 0}
+      ]
+    },
+    {
+      "claim_id": "C-1003",
+      "addr": "3/22 Ashgrove Avenue",
+      "suburb": "Ashgrove QLD 4060",
+      "pm_name": "Brendan Larkin",
+      "pm_email": "brendan.larkin@abcg.com.au",
+      "pm_id": "u-brendan",
+      "rc_name": "Marco Silva",
+      "rc_email": "marco.silva@abcg.com.au",
+      "activities": [
+        {"id": "C1003-c1", "po": "48176", "activity": "Gutter and downpipe replacement", "vendor_id": "v-coastline", "vendor_name": "Coastline Roofing Pty Ltd", "start": "2026-08-19", "finish": "2026-08-21", "predecessors": [], "lag_days": 0}
+      ]
+    },
+    {
+      "claim_id": "C-1004",
+      "addr": "87 Kingsford Smith Drive",
+      "suburb": "Hamilton QLD 4007",
+      "pm_name": "Brendan Larkin",
+      "pm_email": "brendan.larkin@abcg.com.au",
+      "pm_id": "u-brendan",
+      "rc_name": "Marco Silva",
+      "rc_email": "marco.silva@abcg.com.au",
+      "activities": [
+        {"id": "C1004-d1", "po": "48301", "activity": "Storm damage make-safe and repair", "vendor_id": "v-coastline", "vendor_name": "Coastline Roofing Pty Ltd", "start": "2026-08-27", "finish": "2026-09-01", "predecessors": [], "lag_days": 0},
+        {"id": "C1004-d2", "po": "48310", "activity": "Ceiling patch and paint", "vendor_id": "v-glossbros", "vendor_name": "Gloss Bros Painting", "start": "2026-09-03", "finish": "2026-09-04", "predecessors": ["C1004-d1"], "lag_days": 0}
+      ]
+    },
+    {
+      "claim_id": "C-1005",
+      "addr": "6 Petrie Terrace",
+      "suburb": "Red Hill QLD 4059",
+      "pm_name": "Trevor Conroy",
+      "pm_email": "trevor.conroy@abcg.com.au",
+      "pm_id": "u-trevor",
+      "rc_name": null,
+      "rc_email": null,
+      "activities": [
+        {"id": "C1005-e1", "po": "48334", "activity": "Ridge capping and repoint", "vendor_id": "v-coastline", "vendor_name": "Coastline Roofing Pty Ltd", "start": "2026-08-31", "finish": "2026-09-02", "predecessors": [], "lag_days": 0}
+      ]
+    }
+  ],
+  "trade_responses": {
+    "C1001-a3": {"state": "move", "reason": "Weather", "new_start": "2026-08-31", "note": "Forecast is no good Wed and Thu, cannot get the sheets on safely"},
+    "C1002-b1": {"state": "completed"},
+    "C1003-c1": {"state": "completed"},
+    "C1004-d1": {"state": "move", "reason": "Material delay", "new_start": "2026-08-31", "note": "Colorbond order slipped, arriving Friday"},
+    "C1005-e1": {"state": "confirmed"}
+  }
+}

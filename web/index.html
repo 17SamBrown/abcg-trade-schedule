@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ABCG - Confirm your schedule</title>
+<style>
+:root{
+  --teal:#00aa86; --green:#55a51c; --lime:#77b800; --yellowgreen:#bed600;
+  --blue:#00539f; --cyan:#00b1c1; --midblue:#0078c9;
+  --dark:#2a2723; --grey:#939598; --rule:#e4e4e2; --wash:#f6f8f7;
+  --alert:#c0392b; --alertwash:#fdf1ef;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:#fff;color:var(--dark);font-family:Arial,Helvetica,sans-serif;
+  font-size:16px;line-height:1.45;padding-bottom:96px}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px}
+
+.mast{background:var(--teal);color:#fff;padding:20px 0 22px}
+.brand{font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:bold;
+  opacity:.85;margin:0 0 10px}
+.mast h1{font-size:26px;line-height:1.15;margin:0 0 4px;font-weight:bold}
+.mast p{margin:0;font-size:14px;opacity:.9}
+
+.progress{position:sticky;top:0;z-index:20;background:#fff;
+  border-bottom:1px solid var(--rule);padding:12px 0}
+.progress .wrap{display:flex;align-items:center;gap:12px}
+.ptext{font-size:14px;font-weight:bold;white-space:nowrap}
+.ptext span{color:var(--grey);font-weight:normal}
+.ptrack{flex:1;height:6px;background:var(--rule);border-radius:3px;overflow:hidden}
+.pfill{height:100%;width:0;background:var(--lime);transition:width .3s ease}
+
+.jobs{padding-top:14px}
+.card{border:1px solid var(--rule);border-left:4px solid var(--grey);border-radius:6px;
+  margin-bottom:14px;overflow:hidden;transition:border-color .2s ease,background .2s ease}
+.card[data-flag="overdue"]{border-left-color:var(--alert)}
+.card[data-flag="commit"]{border-left-color:var(--teal)}
+.card[data-flag="plan"]{border-left-color:var(--midblue)}
+.card[data-flag="outlook"]{border-left-color:var(--grey)}
+.card.answered{border-left-color:var(--green);background:var(--wash)}
+
+.chead{padding:14px 16px 0}
+.eyebrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);
+  font-weight:bold;margin-bottom:6px}
+.flag{padding:2px 7px;border-radius:3px;letter-spacing:.06em}
+.flag.overdue{background:var(--alertwash);color:var(--alert)}
+.flag.commit{background:#e6f6f3;color:#008065}
+.flag.plan{background:#e6f0f9;color:var(--blue)}
+.flag.outlook{background:#f0f0ef;color:var(--grey)}
+.addr{font-size:19px;font-weight:bold;line-height:1.25;margin:0 0 2px}
+.suburb{font-size:14px;color:var(--grey);margin:0 0 14px}
+
+.band{padding:0 16px 14px}
+.bandrow{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
+.bandrow b{display:block;font-size:15px}
+.bandrow .lbl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--grey);font-weight:bold}
+.bandrow div:last-child{text-align:right}
+.track{position:relative;height:10px;background:var(--rule);border-radius:5px}
+.span{position:absolute;top:0;bottom:0;background:var(--yellowgreen);border-radius:5px}
+.now{position:absolute;top:-4px;width:2px;height:18px;background:var(--dark)}
+.now::after{content:"Today";position:absolute;top:20px;left:50%;transform:translateX(-50%);
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dark);
+  font-weight:bold;white-space:nowrap}
+.trackpad{padding-bottom:20px}
+
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 16px}
+.act{font-family:inherit;font-size:15px;font-weight:bold;color:var(--dark);background:#fff;
+  border:1.5px solid var(--rule);border-radius:5px;padding:14px 10px;cursor:pointer;
+  text-align:center;min-height:52px;transition:all .15s ease}
+.act:hover{border-color:var(--teal)}
+.act:focus-visible{outline:3px solid var(--midblue);outline-offset:2px}
+.act[aria-pressed="true"]{background:var(--teal);border-color:var(--teal);color:#fff}
+.act.move{grid-column:1/-1;border-style:dashed}
+.act.move[aria-pressed="true"]{background:var(--blue);border-color:var(--blue)}
+.act.solo{grid-column:1/-1}
+.handback-link{grid-column:1/-1;font-family:inherit;font-size:14px;background:none;
+  border:none;color:var(--grey);text-decoration:underline;cursor:pointer;padding:10px 0;
+  min-height:40px}
+.handback-link:hover{color:var(--alert)}
+.handback-link[aria-pressed="true"]{color:var(--alert);font-weight:bold}
+.hb-panel{display:none;padding:16px;border-top:1px solid var(--rule);background:var(--alertwash)}
+.hb-panel.open{display:block}
+.hb-warn{font-size:14px;margin:0 0 14px;line-height:1.4}
+.hb-warn b{color:var(--alert)}
+.reason.hb[aria-pressed="true"]{background:var(--alert);border-color:var(--alert)}
+.review-note{display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:11px 13px;
+  background:#eef4f9;border-left:3px solid var(--midblue);font-size:13px;line-height:1.4}
+.review-note b{display:block;margin-bottom:2px}
+
+.move-panel{display:none;padding:16px;border-top:1px solid var(--rule)}
+.move-panel.open{display:block}
+.fieldlabel{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);
+  font-weight:bold;margin:0 0 8px}
+.reasons{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.reason{font-family:inherit;font-size:14px;background:#fff;border:1.5px solid var(--rule);
+  border-radius:20px;padding:9px 16px;cursor:pointer;color:var(--dark);min-height:40px;
+  transition:all .15s ease}
+.reason:hover{border-color:var(--blue)}
+.reason:focus-visible{outline:3px solid var(--midblue);outline-offset:2px}
+.reason[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+input[type="date"],textarea{font-family:inherit;font-size:16px;width:100%;padding:12px;
+  border:1.5px solid var(--rule);border-radius:5px;background:#fff;color:var(--dark)}
+input[type="date"]:focus,textarea:focus{outline:none;border-color:var(--teal)}
+textarea{margin-top:18px;resize:vertical;min-height:70px}
+.hint{font-size:13px;color:var(--grey);margin:8px 0 0}
+
+.answer{display:none;padding:14px 16px;border-top:1px solid var(--rule);
+  align-items:flex-start;gap:10px}
+.answer.show{display:flex}
+.tick{flex:none;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;
+  font-size:13px;font-weight:bold;display:flex;align-items:center;justify-content:center;
+  margin-top:1px}
+.answer-body{flex:1;font-size:15px}
+.answer-body strong{display:block}
+.answer-body em{font-style:normal;color:var(--grey);font-size:13px;display:block;margin-top:2px}
+.change{font-family:inherit;background:none;border:none;padding:4px;color:var(--midblue);
+  font-size:14px;font-weight:bold;text-decoration:underline;cursor:pointer;flex:none}
+
+.done-section{margin-top:34px;border-top:1px solid var(--rule);padding-top:22px}
+.done-head{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);
+  font-weight:bold;margin:0 0 4px}
+.done-sub{font-size:14px;color:var(--grey);margin:0 0 14px}
+.prior{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--rule);
+  border-radius:6px;margin-bottom:8px;background:var(--wash)}
+.prior-main{flex:1;min-width:0}
+.prior-main b{display:block;font-size:15px;font-weight:bold}
+.prior-main span{display:block;font-size:13px;color:var(--grey);margin-top:2px}
+.prior-state{font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:bold;
+  padding:3px 8px;border-radius:3px;white-space:nowrap;background:#eef4e9;color:#3d7211}
+.prior-state.pending{background:#e6f0f9;color:var(--blue)}
+.prior-state.complete{background:#e6f6f3;color:#008065}
+.prior .change{padding:4px 0}
+
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--rule);
+  padding:12px 0 calc(12px + env(safe-area-inset-bottom));z-index:30}
+.submit{font-family:inherit;font-size:17px;font-weight:bold;width:100%;background:var(--teal);
+  color:#fff;border:none;border-radius:5px;padding:16px;cursor:pointer;min-height:56px}
+.submit:disabled{background:var(--rule);color:var(--grey);cursor:not-allowed}
+.submit:focus-visible{outline:3px solid var(--midblue);outline-offset:2px}
+
+.sent{display:none;padding:44px 0 20px;text-align:center}
+.sent.show{display:block}
+.tickbig{width:60px;height:60px;border-radius:50%;background:var(--green);color:#fff;
+  font-size:32px;font-weight:bold;display:flex;align-items:center;justify-content:center;
+  margin:0 auto 20px}
+.sent h2{font-size:24px;margin:0 0 10px}
+.sent p{color:var(--grey);margin:0 auto;max-width:400px}
+.receipt{text-align:left;border:1px solid var(--rule);border-radius:6px;margin-top:28px;
+  overflow:hidden}
+.receipt h3{margin:0;padding:12px 16px;background:var(--teal);color:#fff;font-size:12px;
+  letter-spacing:.1em;text-transform:uppercase}
+.receipt div{padding:12px 16px;border-top:1px solid var(--rule);font-size:15px}
+.receipt div:nth-child(odd){background:var(--wash)}
+.receipt b{display:block;font-size:13px;color:var(--grey);font-weight:bold}
+
+.foot{padding:30px 0 10px;text-align:center;font-size:13px;color:var(--grey)}
+@media (max-width:400px){.acts{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap">
+    <p class="brand">ABCG Trade Schedule</p>
+    <h1>Confirm your schedule</h1>
+    <p id="mastsub">Coastline Roofing Pty Ltd</p>
+  </div>
+</header>
+
+<div class="progress" id="progress">
+  <div class="wrap">
+    <div class="ptext" id="ptext">0 of 3 <span>answered</span></div>
+    <div class="ptrack"><div class="pfill" id="pfill"></div></div>
+  </div>
+</div>
+
+<main class="wrap">
+  <div class="jobs" id="jobs"></div>
+
+  <section class="done-section" id="carried-section">
+    <p class="done-head">Already confirmed</p>
+    <p class="done-sub" id="carried-sub"></p>
+    <div id="carried"></div>
+  </section>
+
+  <p class="foot" id="foot">Something not right? Call your project manager on 1300 000 000.</p>
+
+  <section class="sent" id="sent">
+    <div class="tickbig">&#10003;</div>
+    <h2>Sent to your project manager</h2>
+    <p>Your project manager reviews every date change and handback before anything
+    is updated. Keep working to your current dates until you hear back from them.</p>
+    <div class="receipt"><h3>What you sent</h3><div id="receipt"></div></div>
+  </section>
+</main>
+
+<div class="bar" id="bar">
+  <div class="wrap"><button class="submit" id="submit" disabled>Answer all 3 to send</button></div>
+</div>
+
+<script>
+const API_BASE = "https://e3j9e6sjp7.execute-api.ap-southeast-2.amazonaws.com/dev";
+const TOKEN = new URLSearchParams(location.search).get("t");
+
+let TODAY = new Date();
+let JOBS = [];
+let CARRIED = [];
+let VENDOR = "";
+
+const HB_REASONS = ["No capacity at all","Outside our area","Outside our scope or licence",
+  "Rate or scope not viable","Compliance or insurance lapsed","Issue with the customer","Other"];
+const REASONS = ["Weather","Capacity","Customer delay","Material delay","Access denied","Waiting on ABCG"];
+const LABELS = {handback:"Cannot do this job", confirmed:"Dates confirmed", underway:"On site now", completed:"Work completed",
+  looks_right:"Looks right", move:"Need to move these dates"};
+const SHORT = {confirmed:"Confirmed", underway:"On site", completed:"Complete",
+  looks_right:"Looks right", move:"With your PM"};
+const FLAG = {overdue:"Finish date passed", commit:"Starts soon", plan:"Next week", outlook:"Coming up"};
+
+const answers = {};
+const D = s => {const p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]);};
+const fmt = d => d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"});
+const days = (a,b) => Math.round((b-a)/86400000);
+
+function bandHtml(j){
+  const s=D(j.start), f=D(j.finish);
+  const rail=new Date(TODAY); rail.setDate(rail.getDate()-7);
+  const total=35;
+  const pos = d => Math.max(0,Math.min(100,(days(rail,d)/total)*100));
+  const l=pos(s), r=pos(f), w=Math.max(r-l,3);
+  return `<div class="band">
+    <div class="bandrow">
+      <div><span class="lbl">Start</span><b>${fmt(s)}</b></div>
+      <div><span class="lbl">Finish</span><b>${fmt(f)}</b></div>
+    </div>
+    <div class="track trackpad">
+      <div class="track" style="position:absolute;left:0;right:0;top:0">
+        <div class="span" style="left:${l}%;width:${w}%"></div>
+        <div class="now" style="left:${pos(TODAY)}%"></div>
+      </div>
+    </div></div>`;
+}
+
+function render(){
+  document.getElementById("jobs").innerHTML = JOBS.map((j,i)=>`
+    <article class="card" data-flag="${j.band}" id="card${i}">
+      <div class="chead">
+        <div class="eyebrow"><span>PO ${j.po}</span><span class="flag ${j.band}">${FLAG[j.band]}</span></div>
+        <p class="addr">${j.addr}</p>
+        <p class="suburb">${j.suburb}${j.scope ? " &middot; " + j.scope : ""}</p>
+      </div>
+      ${bandHtml(j)}
+      <div class="acts" id="acts${i}">
+        ${j.actions.filter(a=>a!=="move").map(a=>
+          `<button class="act${j.actions.length===2?" solo":""}" aria-pressed="false"
+            data-job="${i}" data-state="${a}">${LABELS[a]}</button>`).join("")}
+        <button class="act move" aria-pressed="false" data-job="${i}" data-state="move">Need to move these dates</button>
+        <button class="handback-link" aria-pressed="false" data-job="${i}" data-state="handback">I cannot do this job</button>
+      </div>
+      <div class="move-panel" id="panel${i}">
+        <p class="fieldlabel">Why is it moving?</p>
+        <div class="reasons">${REASONS.map(r=>
+          `<button class="reason" aria-pressed="false" data-job="${i}" data-reason="${r}">${r}</button>`).join("")}</div>
+        <p class="fieldlabel">New start date</p>
+        <input type="date" id="date${i}" min="2026-08-24">
+        <textarea id="note${i}" placeholder="Anything your PM should know (optional)"></textarea>
+        <div class="review-note">
+          <span>&#9203;</span>
+          <span><b>This is a request, not a change.</b>
+          Your project manager reviews it and confirms before anything moves.
+          Keep working to the current dates until you hear back.</span>
+        </div>
+      </div>
+      <div class="hb-panel" id="hb${i}">
+        <p class="hb-warn"><b>This hands the job back to ABCG.</b>
+        We will take you off it and find another trade. Only use this if you cannot
+        do the work at all. If you just need different dates, use the move option instead.</p>
+        <p class="fieldlabel">Why can you not do it?</p>
+        <div class="reasons">${HB_REASONS.map(r=>
+          `<button class="reason hb" aria-pressed="false" data-job="${i}" data-hb="${r}">${r}</button>`).join("")}</div>
+        <textarea id="hbnote${i}" placeholder="Anything we should know (optional)"></textarea>
+      </div>
+      <div class="answer" id="ans${i}">
+        <div class="tick">&#10003;</div>
+        <div class="answer-body" id="ansbody${i}"></div>
+        <button class="change" data-change="${i}">Change</button>
+      </div>
+    </article>`).join("");
+
+  const sect = document.getElementById("carried-section");
+  if(!CARRIED.length){ sect.style.display="none"; }
+  else {
+    sect.style.display="block";
+    document.getElementById("carried-sub").textContent =
+      CARRIED.length + " job" + (CARRIED.length!==1?"s":"") +
+      " you have already answered. Nothing needed unless something has changed.";
+    document.getElementById("carried").innerHTML = CARRIED.map((c,i)=>{
+      const cls = c.state==="move" ? "pending" : c.state==="completed" ? "complete" : "";
+      return `<div class="prior">
+        <div class="prior-main">
+          <b>${c.addr}</b>
+          <span>PO ${c.po} &middot; ${fmt(D(c.start))} to ${fmt(D(c.finish))} &middot; you answered ${c.at}</span>
+        </div>
+        <span class="prior-state ${cls}">${SHORT[c.state]}</span>
+        <button class="change" data-reopen="${i}">Change</button>
+      </div>`;
+    }).join("");
+    document.querySelectorAll("[data-reopen]").forEach(b=>b.onclick=()=>reopen(+b.dataset.reopen));
+  }
+  wire(); tally();
+}
+
+function reopen(ci){
+  const c = CARRIED.splice(ci,1)[0];
+  JOBS.push({job_id:"re-"+c.po, po:c.po, addr:c.addr, suburb:c.suburb, scope:"",
+    start:c.start, finish:c.finish, band:"plan",
+    actions:["confirmed","underway","completed","move"]});
+  render();
+  const el = document.getElementById("card"+(JOBS.length-1));
+  if(el) el.scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+function wire(){
+  document.querySelectorAll(".handback-link").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.job;
+    document.querySelectorAll("#acts"+i+" .act").forEach(x=>x.setAttribute("aria-pressed","false"));
+    b.setAttribute("aria-pressed","true");
+    document.getElementById("panel"+i).classList.remove("open");
+    document.getElementById("hb"+i).classList.add("open");
+    answers[i]={state:"handback",reason:null};
+    tally();
+  });
+  document.querySelectorAll("[data-hb]").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.job;
+    document.querySelectorAll("#hb"+i+" .reason").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false"));
+    answers[i].reason=b.dataset.hb;
+    lock(i);
+  });
+  document.querySelectorAll(".act").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.job, state=b.dataset.state;
+    document.querySelectorAll("#acts"+i+" .act").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false"));
+    const panel=document.getElementById("panel"+i);
+    const hb = document.getElementById("hb"+i);
+    if(state==="move"){
+      panel.classList.add("open"); if(hb) hb.classList.remove("open");
+      answers[i]={state:"move",reason:null,newStart:null}; tally();
+    } else if(state==="handback"){
+      panel.classList.remove("open"); if(hb) hb.classList.add("open");
+      answers[i]={state:"handback",reason:null}; tally();
+    } else {
+      panel.classList.remove("open"); if(hb) hb.classList.remove("open");
+      answers[i]={state:state}; lock(i);
+    }
+  });
+  document.querySelectorAll(".reason").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.job;
+    document.querySelectorAll("#panel"+i+" .reason").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false"));
+    answers[i].reason=b.dataset.reason; maybeLock(i);
+  });
+  JOBS.forEach((_,i)=>{
+    const d=document.getElementById("date"+i);
+    if(d) d.onchange=()=>{answers[i].newStart=d.value; maybeLock(i);};
+  });
+  document.querySelectorAll("[data-change]").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.change;
+    document.getElementById("ans"+i).classList.remove("show");
+    document.getElementById("acts"+i).style.display="grid";
+    document.getElementById("card"+i).classList.remove("answered");
+    if(answers[i] && answers[i].state==="move") document.getElementById("panel"+i).classList.add("open");
+    delete answers[i];
+    document.querySelectorAll("#acts"+i+" .act").forEach(x=>x.setAttribute("aria-pressed","false"));
+    tally();
+  });
+}
+
+function maybeLock(i){
+  const a=answers[i];
+  if(a && a.reason && a.newStart) lock(i); else tally();
+}
+
+function lock(i){
+  const a=answers[i], j=JOBS[i];
+  let head, sub;
+  if(a.state==="move"){
+    head = "Move requested to "+fmt(D(a.newStart));
+    sub  = a.reason+" &middot; your PM will review this";
+  } else if(a.state==="handback"){
+    head = "Handed back to ABCG";
+    sub  = a.reason+" &middot; we will reallocate this job";
+  } else {
+    head = LABELS[a.state];
+    sub  = "PO "+j.po+" &middot; "+j.addr;
+  }
+  document.getElementById("ansbody"+i).innerHTML="<strong>"+head+"</strong><em>"+sub+"</em>";
+  document.getElementById("ans"+i).classList.add("show");
+  document.getElementById("acts"+i).style.display="none";
+  document.getElementById("panel"+i).classList.remove("open");
+  document.getElementById("card"+i).classList.add("answered");
+  tally();
+}
+
+function tally(){
+  const done=Object.keys(answers).filter(k=>{
+    const a=answers[k];
+    if(a.state==="move") return !!(a.reason && a.newStart);
+    if(a.state==="handback") return !!a.reason;
+    return true;
+  }).length;
+  document.getElementById("ptext").innerHTML=done+" of "+JOBS.length+" <span>answered</span>";
+  document.getElementById("pfill").style.width=(JOBS.length?done/JOBS.length*100:100)+"%";
+  const btn=document.getElementById("submit");
+  btn.disabled = done<JOBS.length;
+  btn.textContent = done<JOBS.length ? "Answer all "+JOBS.length+" to send" : "Send to my project manager";
+}
+
+document.getElementById("submit").onclick=async ()=>{
+  const btn = document.getElementById("submit");
+  btn.disabled = true; btn.textContent = "Sending...";
+  const payload = { responses: {} };
+  JOBS.forEach((j,i)=>{
+    const a = answers[i];
+    if(a.state === "move"){
+      payload.responses[j.job_id] = { state:"move", reason:a.reason,
+        new_start:a.newStart, note:(document.getElementById("note"+i)||{}).value || "" };
+    } else if(a.state === "handback"){
+      payload.responses[j.job_id] = { state:"handback", reason:a.reason,
+        note:(document.getElementById("hbnote"+i)||{}).value || "" };
+    } else if(a.state === "propose"){
+      payload.responses[j.job_id] = { state:"propose",
+        proposed_start:a.newStart, proposed_finish:a.newFinish || a.newStart };
+    } else {
+      payload.responses[j.job_id] = { state:a.state };
+    }
+  });
+  try{
+    const r = await fetch(API_BASE + "/v1/schedule?t=" + encodeURIComponent(TOKEN), {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if(!r.ok){
+      alert(d.error || "Something went wrong. Please try again.");
+      btn.disabled = false; btn.textContent = "Send to my project manager";
+      return;
+    }
+  }catch(e){
+    alert("We could not send that. Check your signal and try again.");
+    btn.disabled = false; btn.textContent = "Send to my project manager";
+    return;
+  }
+  document.getElementById("receipt").innerHTML=JOBS.map((j,i)=>{
+    const a=answers[i];
+    const txt = a.state==="move" ? "Move to "+fmt(D(a.newStart))+" ("+a.reason+")"
+              : a.state==="handback" ? "Handed back ("+a.reason+")"
+              : LABELS[a.state];
+    return "<div><b>PO "+j.po+" &middot; "+j.addr+"</b>"+txt+"</div>";
+  }).join("");
+  ["jobs","foot","progress","bar","carried-section"].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display="none";
+  });
+  document.getElementById("sent").classList.add("show");
+  window.scrollTo(0,0);
+};
+
+function fail(msg){
+  document.getElementById("progress").style.display = "none";
+  document.getElementById("bar").style.display = "none";
+  document.getElementById("carried-section").style.display = "none";
+  document.getElementById("jobs").innerHTML =
+    '<div class="card" style="border-left-color:var(--alert);padding:20px 16px">'
+    + '<p class="addr" style="margin-bottom:6px">Link not valid</p>'
+    + '<p class="suburb" style="margin:0">' + msg + '</p></div>';
+}
+
+async function load(){
+  if(!TOKEN){ fail("This link is missing its code. Use the link from your email."); return; }
+  try{
+    const r = await fetch(API_BASE + "/v1/schedule?t=" + encodeURIComponent(TOKEN));
+    const d = await r.json();
+    if(!r.ok){ fail(d.error || "Please call your project manager for a new link."); return; }
+
+    VENDOR = d.vendor_name || "";
+    document.getElementById("mastsub").textContent = VENDOR;
+    if(d.today) TODAY = new Date(d.today + "T00:00:00");
+
+    const all = d.jobs || [];
+    JOBS = all.filter(j => !j.carried).map(j => ({
+      job_id: j.job_id, po: j.po, addr: j.addr, suburb: j.suburb, scope: j.scope,
+      start: j.start, finish: j.finish,
+      band: j.band || "plan",
+      actions: (j.actions && j.actions.length) ? j.actions
+               : ["confirmed","underway","completed","move"]
+    }));
+    CARRIED = all.filter(j => j.carried).map(j => ({
+      po: j.po, addr: j.addr, suburb: j.suburb, start: j.start, finish: j.finish,
+      state: (j.prior && j.prior.state) || "confirmed",
+      at: (j.prior && j.prior.at) ? j.prior.at.slice(0,10) : ""
+    }));
+
+    if(d.submitted_at && !JOBS.length){
+      document.getElementById("progress").style.display = "none";
+      document.getElementById("bar").style.display = "none";
+      document.getElementById("jobs").innerHTML =
+        '<div class="card" style="border-left-color:var(--green);padding:20px 16px">'
+        + '<p class="addr" style="margin-bottom:6px">All done</p>'
+        + '<p class="suburb" style="margin:0">You have already answered everything '
+        + 'for this period. Nothing more is needed.</p></div>';
+      render();
+      return;
+    }
+    render();
+  }catch(e){
+    fail("We could not load your jobs. Try again, or call your project manager.");
+  }
+}
+
+load();
+</script>
+</body>
+</html>
