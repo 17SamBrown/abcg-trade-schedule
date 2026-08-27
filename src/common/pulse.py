@@ -336,7 +336,7 @@ def _enrich(rows):
         print(f"EXCLUDED {len(orphans)} POs with no job attached")
         rows = [r for r in rows if r.get("claim_id")]
 
-    jobs = {} for r in rows}))
+    jobs = {}
     return [_shape(r, vendors, jobs) for r in rows]
 
 
