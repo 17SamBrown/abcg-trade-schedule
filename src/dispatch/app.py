@@ -112,10 +112,9 @@ def _run(event):
             sent.append(row)
             continue
 
-        keep = ("job_id", "claim_id", "po", "scope", "addr", "suburb", "start",
-                "finish", "band", "band_label", "actions", "mode", "why",
-                "pm_id", "pm_name", "pm_email", "supervisor_name",
-                "supervisor_email", "rc_name", "rc_email")
+        keep = ("job_id", "claim_id", "po", "job_ref", "job_type", "scope", "addr", "suburb",
+                "start", "finish", "band", "band_label", "actions", "mode", "why",
+                "recipients")
         snapshot = [{k: j.get(k) for k in keep} for j in ask]
         snapshot += [{**{k: j.get(k) for k in keep}, "carried": True,
                       "prior": j.get("prior")} for j in carried]

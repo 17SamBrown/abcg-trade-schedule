@@ -336,7 +336,7 @@ def _enrich(rows):
         print(f"EXCLUDED {len(orphans)} POs with no job attached")
         rows = [r for r in rows if r.get("claim_id")]
 
-    jobs = _fetch_job_roles(sorted({str(r["claim_id"]) for r in rows}))
+    jobs = {} for r in rows}))
     return [_shape(r, vendors, jobs) for r in rows]
 
 
@@ -407,34 +407,6 @@ def _fetch_excluded_claims(claim_ids):
     return by_status | by_type | missing
 
 
-def _fetch_job_roles(claim_ids):
-    """
-    Project manager, supervisor and repair coordinator per job.
-
-    Wrapped in a try because JOB_ROLES is unconfirmed. If the columns do not
-    exist, the build still works - the digest falls back to the test recipient
-    and the run log says why. Better than the whole dry run failing on one join.
-    """
-    if not claim_ids:
-        return {}
-    r = JOB_ROLES
-    try:
-        rows = db.query(f"""
-            SELECT j.{r['id']} AS job_id,
-                   pm.id  AS pm_id,  pm.name  AS pm_name,  pm.email  AS pm_email,
-                   sv.name AS supervisor_name, sv.email AS supervisor_email,
-                   rc.name AS rc_name,         rc.email AS rc_email
-            FROM public.{r['table']} j
-            LEFT JOIN public.users pm ON pm.id = j.{r['pm']}
-            LEFT JOIN public.users sv ON sv.id = j.{r['supervisor']}
-            LEFT JOIN public.users rc ON rc.id = j.{r['rc']}
-            WHERE j.{r['id']} = ANY(:ids)
-        """, database=JOB_DB, ids=claim_ids)
-        return {str(x["job_id"]): x for x in rows}
-    except Exception as e:  # noqa: BLE001
-        print(f"JOB ROLES LOOKUP FAILED - correct JOB_ROLES in pulse.py: {e}")
-        return {}
-
 
 def _addr(r):
     """
@@ -483,6 +455,7 @@ def _shape(r, vendors, jobs):
         "addr": _addr(r),
         "suburb": _suburb(r),
         "job_ref": (_JOB_DETAIL.get(str(r.get("claim_id"))) or {}).get("job_ref"),
+        "job_type": (_JOB_DETAIL.get(str(r.get("claim_id"))) or {}).get("job_type"),
         "vendor_id": str(r["vendor_id"]) if r.get("vendor_id") else None,
         "vendor_name": v.get("business_name"),
         "vendor_contact": None,
@@ -514,3 +487,4 @@ def create_pm_task(*_a, **_k):
 
 def create_activity_note(*_a, **_k):
     raise NotImplementedError("Read replica. No write path exists.")
+

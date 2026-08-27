@@ -29,3 +29,10 @@ Thumbs.db
 *.pem
 *.key
 .env
+
+sespolicy.json
+payload*.json
+evt.json
+sug*.json
+p3.json
+rolling.json

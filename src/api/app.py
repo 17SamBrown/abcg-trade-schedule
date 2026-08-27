@@ -66,11 +66,25 @@ def _get(dispatch):
         "today": date.today().isoformat(),
         "reasons": sorted(VALID_REASONS),
         # never expose PM contact details to the trade
-        "jobs": [
-            {k: j.get(k) for k in ("job_id", "po", "scope", "addr", "suburb", "start", "finish")}
-            for j in dispatch["jobs"]
-        ],
+        "jobs": [_public_job(j) for j in dispatch["jobs"]],
     })
+
+
+def _public_job(j):
+    """
+    What the trade is allowed to see. The PM's NAME goes out so the trade knows
+    who holds the job; the email address never does.
+    """
+    out = {k: j.get(k) for k in ("job_id", "po", "job_ref", "scope", "addr",
+                                 "suburb", "start", "finish", "band", "actions",
+                                 "carried")}
+    primary = ((j.get("recipients") or {}).get("primary") or [])
+    if primary:
+        out["pm_name"] = ", ".join(p["name"] for p in primary if p.get("name"))
+    prior = j.get("prior") or {}
+    if prior:
+        out["prior"] = {k: prior.get(k) for k in ("state", "at", "reason")}
+    return out
 
 
 def _post(event, token, dispatch):

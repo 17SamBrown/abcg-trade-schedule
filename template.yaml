@@ -48,7 +48,9 @@ Globals:
         TEST_MODE: !Ref TestMode
         TEST_MODE_RECIPIENT: !Ref TestModeRecipient
         PULSE_SECRET_ARN: !Ref PulseSecretArn
-        WRITE_BACK_ENABLED: 'false' 
+        WRITE_BACK_ENABLED: 'false'
+        SUGGEST_FUNCTION: abcg-trade-suggest
+        SUGGEST_ENABLED: 'true' 
         NOTIFY_TOPIC_ARN: !Ref NotifyTopic
     Tags:
       Project: TradeScheduleConfirmation
@@ -203,6 +205,10 @@ Resources:
             TableName: !Ref DispatchTable
         - SESCrudPolicy:
             IdentityName: !Ref SenderEmail
+        - Statement:
+            - Effect: Allow
+              Action: [lambda:InvokeFunction]
+              Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:abcg-trade-suggest
       Events:
         OnResponse:
           Type: SNS

@@ -50,7 +50,9 @@ body{background:#fff;color:var(--dark);font-family:Arial,Helvetica,sans-serif;
 .flag.plan{background:#e6f0f9;color:var(--blue)}
 .flag.outlook{background:#f0f0ef;color:var(--grey)}
 .addr{font-size:19px;font-weight:bold;line-height:1.25;margin:0 0 2px}
-.suburb{font-size:14px;color:var(--grey);margin:0 0 14px}
+.suburb{font-size:14px;color:var(--grey);margin:0 0 6px}
+.pm{font-size:13px;color:var(--grey);margin:0 0 14px}
+.pm b{color:var(--dark);font-weight:bold}
 
 .band{padding:0 16px 14px}
 .bandrow{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
@@ -187,13 +189,13 @@ textarea{margin-top:18px;resize:vertical;min-height:70px}
     <div id="carried"></div>
   </section>
 
-  <p class="foot" id="foot">Something not right? Call your project manager on 1300 000 000.</p>
+  <p class="foot" id="foot">Something not right? Call ABCG on 1300 554 611.</p>
 
   <section class="sent" id="sent">
     <div class="tickbig">&#10003;</div>
-    <h2>Sent to your project manager</h2>
-    <p>Your project manager reviews every date change and handback before anything
-    is updated. Keep working to your current dates until you hear back from them.</p>
+    <h2>Sent to ABCG</h2>
+    <p>Every date change and handback is reviewed before anything is updated. Keep
+    working to your current dates until you hear back. Anything urgent, call 1300 554 611.</p>
     <div class="receipt"><h3>What you sent</h3><div id="receipt"></div></div>
   </section>
 </main>
@@ -248,9 +250,10 @@ function render(){
   document.getElementById("jobs").innerHTML = JOBS.map((j,i)=>`
     <article class="card" data-flag="${j.band}" id="card${i}">
       <div class="chead">
-        <div class="eyebrow"><span>PO ${j.po}</span><span class="flag ${j.band}">${FLAG[j.band]}</span></div>
+        <div class="eyebrow"><span>PO ${j.po}${j.job_ref ? " &middot; " + j.job_ref : ""}</span><span class="flag ${j.band}">${FLAG[j.band]}</span></div>
         <p class="addr">${j.addr}</p>
         <p class="suburb">${j.suburb}${j.scope ? " &middot; " + j.scope : ""}</p>
+        ${j.pm_name ? `<p class="pm">Managed by <b>${j.pm_name}</b></p>` : ""}
       </div>
       ${bandHtml(j)}
       <div class="acts" id="acts${i}">
@@ -270,7 +273,7 @@ function render(){
         <div class="review-note">
           <span>&#9203;</span>
           <span><b>This is a request, not a change.</b>
-          Your project manager reviews it and confirms before anything moves.
+          The person managing this job reviews it and confirms before anything moves.
           Keep working to the current dates until you hear back.</span>
         </div>
       </div>
@@ -355,7 +358,7 @@ function wire(){
       answers[i]={state:state}; lock(i);
     }
   });
-  document.querySelectorAll(".reason").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".reason:not(.hb)").forEach(b=>b.onclick=()=>{
     const i=+b.dataset.job;
     document.querySelectorAll("#panel"+i+" .reason").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false"));
     answers[i].reason=b.dataset.reason; maybeLock(i);
@@ -386,7 +389,7 @@ function lock(i){
   let head, sub;
   if(a.state==="move"){
     head = "Move requested to "+fmt(D(a.newStart));
-    sub  = a.reason+" &middot; your PM will review this";
+    sub  = a.reason+" &middot; being reviewed";
   } else if(a.state==="handback"){
     head = "Handed back to ABCG";
     sub  = a.reason+" &middot; we will reallocate this job";
@@ -413,7 +416,7 @@ function tally(){
   document.getElementById("pfill").style.width=(JOBS.length?done/JOBS.length*100:100)+"%";
   const btn=document.getElementById("submit");
   btn.disabled = done<JOBS.length;
-  btn.textContent = done<JOBS.length ? "Answer all "+JOBS.length+" to send" : "Send to my project manager";
+  btn.textContent = done<JOBS.length ? "Answer all "+JOBS.length+" to send" : "Send to ABCG";
 }
 
 document.getElementById("submit").onclick=async ()=>{
@@ -443,12 +446,12 @@ document.getElementById("submit").onclick=async ()=>{
     const d = await r.json();
     if(!r.ok){
       alert(d.error || "Something went wrong. Please try again.");
-      btn.disabled = false; btn.textContent = "Send to my project manager";
+      btn.disabled = false; btn.textContent = "Send to ABCG";
       return;
     }
   }catch(e){
-    alert("We could not send that. Check your signal and try again.");
-    btn.disabled = false; btn.textContent = "Send to my project manager";
+    alert("We could not send that. Check your signal and try again, or call 1300 554 611.");
+    btn.disabled = false; btn.textContent = "Send to ABCG";
     return;
   }
   document.getElementById("receipt").innerHTML=JOBS.map((j,i)=>{
@@ -476,11 +479,11 @@ function fail(msg){
 }
 
 async function load(){
-  if(!TOKEN){ fail("This link is missing its code. Use the link from your email."); return; }
+  if(!TOKEN){ fail("This link is missing its code. Use the link from your email, or call 1300 554 611."); return; }
   try{
     const r = await fetch(API_BASE + "/v1/schedule?t=" + encodeURIComponent(TOKEN));
     const d = await r.json();
-    if(!r.ok){ fail(d.error || "Please call your project manager for a new link."); return; }
+    if(!r.ok){ fail(d.error || "Call ABCG on 1300 554 611 for a new link."); return; }
 
     VENDOR = d.vendor_name || "";
     document.getElementById("mastsub").textContent = VENDOR;
@@ -488,7 +491,8 @@ async function load(){
 
     const all = d.jobs || [];
     JOBS = all.filter(j => !j.carried).map(j => ({
-      job_id: j.job_id, po: j.po, addr: j.addr, suburb: j.suburb, scope: j.scope,
+      job_id: j.job_id, po: j.po, job_ref: j.job_ref, addr: j.addr,
+      suburb: j.suburb, scope: j.scope, pm_name: j.pm_name,
       start: j.start, finish: j.finish,
       band: j.band || "plan",
       actions: (j.actions && j.actions.length) ? j.actions
@@ -513,7 +517,7 @@ async function load(){
     }
     render();
   }catch(e){
-    fail("We could not load your jobs. Try again, or call your project manager.");
+    fail("We could not load your jobs. Try again, or call ABCG on 1300 554 611.");
   }
 }
 

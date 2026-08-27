@@ -1,16 +1,20 @@
 """
-On submission: split the trade's responses by owning PM and send one email each,
-CC the Repair Coordinator on that job. A PM only ever sees their own portfolio.
+On submission: split responses by whoever holds the job, email each of them,
+and give them what they need to act without opening another system.
 
-Move requests inside the escalation window also raise a PM task in Crunchwork.
+  date change  -> which downstream trades break if they accept it
+  handback     -> replacement trades from the existing suggester
+
+This module deliberately owns no HTML. Every template lives in common/emails.py.
+An earlier version duplicated the label and colour maps here, which is how a new
+response type reached production and crashed the digest.
 """
 import json
 import os
-from datetime import date
 
 import boto3
 
-from common import cascade, crunchwork, store
+from common import cascade, crunchwork, emails, store, suggest
 
 _ses = None
 
@@ -21,158 +25,111 @@ def ses():
         _ses = boto3.client("ses")
     return _ses
 
+
 SENDER = os.environ["SENDER_EMAIL"]
 TEST_MODE = os.environ.get("TEST_MODE") == "true"
 TEST_RECIPIENT = os.environ.get("TEST_MODE_RECIPIENT")
 
-LABEL = {
-    "confirmed": "Dates confirmed",
-    "underway":  "On site now",
-    "completed": "Reported complete",
-    "move":      "Date change requested",
-}
-COLOUR = {
-    "confirmed": "#55a51c",
-    "underway":  "#0078c9",
-    "completed": "#00b1c1",
-    "move":      "#c0392b",
-}
-
 
 def handler(event, context):
-    results = []
-    for record in event["Records"]:
-        msg = json.loads(record["Sns"]["Message"])
-        results.append(_process(msg["token_hash"]))
-    return {"processed": results}
+    return {"processed": [_process(json.loads(r["Sns"]["Message"])["token_hash"])
+                          for r in event["Records"]]}
 
 
 def _process(token_hash):
     item = store.table().get_item(
-        Key={"pk": f"DISPATCH#{token_hash}", "sk": "META"}
-    ).get("Item")
+        Key={"pk": f"DISPATCH#{token_hash}", "sk": "META"}).get("Item")
     if not item:
         return {"token_hash": token_hash, "error": "dispatch not found"}
 
     vendor = item["vendor_name"]
+    vendor_id = item.get("vendor_id")
     jobs = {j["job_id"]: j for j in item["jobs"]}
+    sequences = item.get("sequences") or {}
     responses = item.get("responses") or {}
 
-    # Group by primary recipient. A job with two Project Managers lands in two
-    # buckets, so both are told. A job with nobody assigned goes to the
-    # unassigned bucket rather than disappearing.
+    impacts = _cascades(jobs, sequences, responses)
+    options = _handback_options(jobs, responses, vendor)
+
+    # Group by whoever holds the job. Two PMs means two emails; a duplicate
+    # beats the right person never being told.
     buckets = {}
     for job_id, r in responses.items():
         j = jobs.get(job_id)
         if not j:
             continue
         rec = j.get("recipients") or {}
-        primary = rec.get("primary") or []
+        primary = rec.get("primary") or [{"name": "Unassigned",
+                                          "email": TEST_RECIPIENT}]
         copied = rec.get("copied") or []
-
-        if not primary:
-            primary = [{"name": "Unassigned", "email": TEST_RECIPIENT}]
-
         for p in primary:
             b = buckets.setdefault(p["email"], {
-                "pm_name": p.get("name") or "Team", "cc": set(), "rows": []})
+                "name": p.get("name") or "Team", "cc": set(), "rows": []})
             for c in copied:
                 if c["email"] != p["email"]:
                     b["cc"].add(c["email"])
             b["rows"].append((j, r))
 
     sent = []
-    for pm_email, b in buckets.items():
-        if pm_email == "unassigned":
-            pm_email = TEST_RECIPIENT
-        _email_pm(pm_email, sorted(b["cc"]), b["pm_name"], vendor, b["rows"])
-        sent.append(pm_email)
+    for to_addr, b in buckets.items():
+        subject, html = emails.pm_digest(b["name"], vendor, b["rows"],
+                                         impacts=impacts, options=options)
+        _send(to_addr, sorted(b["cc"]), subject, html)
+        sent.append(to_addr)
 
-    wb = _write_back(vendor, jobs, responses)
-    return {"vendor": vendor, "emails": sent, "crunchwork": wb}
+    return {"vendor": vendor, "emails": sent,
+            "cascades": len(impacts), "suggested": len(options),
+            "crunchwork": _write_back(vendor, jobs, responses)}
 
 
-def _email_pm(pm_email, cc_emails, pm_name, vendor, rows):
-    moves = [r for _, r in rows if r["state"] == "move"]
-    completed = [r for _, r in rows if r["state"] == "completed"]
+def _cascades(jobs, sequences, responses):
+    """
+    Forward pass per move request, using the trade sequence snapshotted at
+    token-issue time so this never touches the database.
+    """
+    out = {}
+    for job_id, r in responses.items():
+        if r.get("state") != "move":
+            continue
+        j = jobs.get(job_id) or {}
+        acts = sequences.get(j.get("claim_id"))
+        if not acts:
+            continue
+        try:
+            out[job_id] = cascade.simulate(acts, job_id, r["new_start"])
+        except Exception as e:  # noqa: BLE001
+            print(f"cascade failed for {job_id} (non-fatal): {e}")
+    return out
 
-    if moves:
-        subject = f"{vendor}: {len(moves)} date change request{'s' if len(moves) != 1 else ''}"
-    else:
-        subject = f"{vendor}: schedule confirmed ({len(rows)} job{'s' if len(rows) != 1 else ''})"
 
-    action_note = ""
-    if moves:
-        action_note = ("<p style='background:#fdf1ef;border-left:4px solid #c0392b;"
-                       "padding:12px 14px;margin:0 0 18px'><b>Action needed.</b> "
-                       "Nothing has moved in the scheduler. These dates change only "
-                       "when you accept them.</p>")
-    if completed:
-        action_note += ("<p style='background:#e6f6f3;border-left:4px solid #00b1c1;"
-                        "padding:12px 14px;margin:0 0 18px'>"
-                        f"<b>{len(completed)} reported complete.</b> Verify against site "
-                        "photos or the invoice before closing.</p>")
+def _handback_options(jobs, responses, vendor_name):
+    out = {}
+    for job_id, r in responses.items():
+        if r.get("state") != "handback":
+            continue
+        picks, ctx = suggest.suggest_for(jobs.get(job_id) or {},
+                                         exclude_vendor_name=vendor_name)
+        if picks:
+            out[job_id] = {"picks": picks, "context": ctx}
+    return out
 
-    body_rows = "".join(_row(j, r) for j, r in sorted(rows, key=lambda x: x[0].get("start") or ""))
 
-    html = f"""<html><body style="font-family:Arial,sans-serif;color:#2a2723;margin:0">
-<div style="max-width:640px;margin:0 auto">
-  <div style="background:#00aa86;color:#fff;padding:18px 20px">
-    <div style="font-size:12px;letter-spacing:.15em;text-transform:uppercase">Trade Schedule Response</div>
-    <div style="font-size:21px;font-weight:bold;margin-top:5px">{vendor}</div>
-  </div>
-  <div style="padding:20px">
-    <p>Hi {pm_name.split()[0] if pm_name else 'there'},</p>
-    {action_note}
-    <table style="width:100%;border-collapse:collapse;border:1px solid #e4e4e2">{body_rows}</table>
-    <p style="color:#939598;font-size:13px;margin-top:20px">
-      Sent automatically when {vendor} submitted their weekly confirmation.
-      Only your jobs are shown.</p>
-  </div>
-</div></body></html>"""
-
-    dest = {"ToAddresses": [TEST_RECIPIENT if TEST_MODE else pm_email]}
-    if cc_emails and not TEST_MODE:
-        dest["CcAddresses"] = cc_emails
-
+def _send(to_addr, cc, subject, html):
+    dest = {"ToAddresses": [TEST_RECIPIENT if TEST_MODE else to_addr]}
+    if cc and not TEST_MODE:
+        dest["CcAddresses"] = cc
     ses().send_email(
         Source=SENDER,
         Destination=dest,
         Message={
-            "Subject": {"Data": (f"[TEST -> {pm_email}] " if TEST_MODE else "") + subject},
+            "Subject": {"Data": (f"[TEST -> {to_addr}] " if TEST_MODE else "") + subject},
             "Body": {"Html": {"Data": html}},
         },
     )
 
 
-def _row(j, r):
-    state = r["state"]
-    detail = ""
-    if state == "move":
-        detail = (f"<div style='margin-top:6px;font-size:14px'>"
-                  f"Wants <b>{r['new_start']}</b> &middot; reason: {r['reason']}</div>")
-        if r.get("note"):
-            detail += (f"<div style='margin-top:4px;font-size:13px;color:#939598'>"
-                       f"&ldquo;{r['note']}&rdquo;</div>")
-    return f"""<tr>
-  <td style="padding:12px 14px;border-bottom:1px solid #e4e4e2;border-left:4px solid {COLOUR[state]}">
-    <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:{COLOUR[state]};font-weight:bold">
-      {LABEL[state]}</div>
-    <div style="font-weight:bold;margin-top:3px">{j['addr']}</div>
-    <div style="font-size:13px;color:#939598">PO {j['po']} &middot; booked {j['start']} to {j['finish']}</div>
-    {detail}
-  </td></tr>"""
-
-
 def _write_back(vendor, jobs, responses):
-    """
-    Every response lands in Crunchwork, because that is the system of record.
-    Confirmations and site starts become activity notes, completions and date
-    change requests become PM tasks. Nothing here moves a date.
-
-    Failures are logged and swallowed per job. A GraphQL error on one job must
-    not lose the other seven, and the DynamoDB record is the fallback source.
-    """
+    """Disabled by flag. Failures are per job and never lose the other rows."""
     written, failed = [], []
     for job_id, r in responses.items():
         j = jobs.get(job_id)
@@ -180,7 +137,7 @@ def _write_back(vendor, jobs, responses):
             continue
         try:
             written.append(crunchwork.write_back(vendor, j, r))
-        except Exception as e:                          # noqa: BLE001
-            print(f"WRITEBACK FAILED job={job_id} po={j.get('po')} state={r['state']}: {e}")
-            failed.append({"job_id": job_id, "po": j.get("po"), "error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            print(f"WRITEBACK FAILED job={job_id} po={j.get('po')}: {e}")
+            failed.append({"job_id": job_id, "po": j.get("po")})
     return {"written": len(written), "failed": failed}

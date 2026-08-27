@@ -17,6 +17,9 @@ ALERT = "#c0392b"
 ALERTWASH = "#fdf1ef"
 TEALWASH = "#e6f6f3"
 
+# Crunchwork job link, same pattern as the Daily PM Update
+PULSE_JOB_URL = "https://abcg.unitycloud.io/pulse/abcg/jobs/{claim_id}/details"
+
 LABEL = {
     "handback": "CANNOT DO THIS JOB",
     "confirmed": "Dates confirmed",
@@ -72,7 +75,7 @@ def trade_invite(vendor, jobs, link, carried=None):
 
     rows = "".join(f"""<tr><td style="padding:10px 14px;border-bottom:1px solid {RULE}">
           <div style="font-weight:bold">{j['addr']}</div>
-          <div style="font-size:13px;color:{GREY}">PO {j['po']} &middot; {j.get('scope','')}</div>
+          <div style="font-size:13px;color:{GREY}">PO {j['po']}{" &middot; job " + j['job_ref'] if j.get('job_ref') else ""} &middot; {j.get('scope','')}</div>
           <div style="font-size:13px;margin-top:3px">{nice(j['start'])} to {nice(j['finish'])}</div>
         </td></tr>""" for j in sorted(jobs, key=lambda x: x.get("start") or ""))
 
@@ -115,17 +118,23 @@ def trade_invite(vendor, jobs, link, carried=None):
 # 2. Response digest to the PM (RC on CC)
 # --------------------------------------------------------------------------
 
-def pm_digest(pm_name, vendor_name, rows, impacts=None):
+def pm_digest(pm_name, vendor_name, rows, impacts=None, options=None):
     """
     rows:    [(job dict, response dict)] - only this PM's jobs
     impacts: {job_id: cascade.simulate(...) result} for move responses
     """
     impacts = impacts or {}
+    options = options or {}
+    handbacks = [(j, r) for j, r in rows if r["state"] == "handback"]
     moves = [r for _, r in rows if r["state"] == "move"]
     completed = [r for _, r in rows if r["state"] == "completed"]
     breaks = sum(len(impacts.get(j["job_id"], {}).get("impacted", [])) for j, _ in rows)
 
-    if moves:
+    if handbacks:
+        n = len(handbacks)
+        subject = (f"ACTION: {vendor_name} has handed back "
+                   f"{n} job{'s' if n != 1 else ''} - reallocation needed")
+    elif moves:
         subject = f"{vendor_name}: {len(moves)} date change request{'s' if len(moves) != 1 else ''}"
         if breaks:
             subject += f", {breaks} trade{'s' if breaks != 1 else ''} affected"
@@ -133,6 +142,16 @@ def pm_digest(pm_name, vendor_name, rows, impacts=None):
         subject = f"{vendor_name}: schedule confirmed ({len(rows)} job{'s' if len(rows) != 1 else ''})"
 
     banner = ""
+    if handbacks:
+        lines = "".join(
+            f"<li style='margin-bottom:4px'><b>{_link(j)}</b> (PO {j['po']}) "
+            f"&mdash; {r['reason']}</li>" for j, r in handbacks)
+        banner += (f"<div style='background:{ALERTWASH};border-left:4px solid {ALERT};"
+                   f"padding:14px 16px;margin:0 0 16px'>"
+                   f"<b style='color:{ALERT}'>Reallocation needed.</b> "
+                   f"{vendor_name} cannot do the following. These jobs currently have "
+                   f"nobody allocated to them.<ul style='margin:8px 0 0;padding-left:18px'>"
+                   f"{lines}</ul></div>")
     if moves:
         banner += (f"<p style='background:{ALERTWASH};border-left:4px solid {ALERT};"
                    f"padding:12px 14px;margin:0 0 16px'><b>Action needed.</b> Nothing has moved "
@@ -143,7 +162,7 @@ def pm_digest(pm_name, vendor_name, rows, impacts=None):
                    f"Verify against site photos or the invoice before closing.</p>")
 
     body = "".join(
-        _job_block(j, r, impacts.get(j["job_id"]))
+        _job_block(j, r, impacts.get(j["job_id"]), options.get(j["job_id"]))
         for j, r in sorted(rows, key=lambda x: x[0].get("start") or "")
     )
 
@@ -154,9 +173,17 @@ def pm_digest(pm_name, vendor_name, rows, impacts=None):
     return subject, _shell("Trade Schedule Response", vendor_name, inner)
 
 
-def _job_block(j, r, impact):
+def _job_block(j, r, impact, picks=None):
     state = r["state"]
     detail = ""
+    if state == "handback":
+        detail = (f"<div style='margin-top:8px;font-size:14px'>"
+                  f"Reason: <b>{r['reason']}</b></div>")
+        if r.get("note"):
+            detail += (f"<div style='margin-top:4px;font-size:13px;color:{GREY}'>"
+                       f"&ldquo;{r['note']}&rdquo;</div>")
+        detail += (f"<div style='margin-top:8px;font-size:13px;color:{ALERT}'>"
+                   f"<b>Nobody is allocated to this job.</b></div>")
     if state == "move":
         detail = (f"<div style='margin-top:8px;font-size:14px'>Wants "
                   f"<b>{nice(r['new_start'])}</b> &middot; reason: {r['reason']}</div>")
@@ -165,17 +192,74 @@ def _job_block(j, r, impact):
                        f"&ldquo;{r['note']}&rdquo;</div>")
 
     cascade_html = _cascade_block(impact) if impact else ""
+    if state == "handback" and picks:
+        cascade_html += _suggest_block(picks)
 
     return f"""<div style="border:1px solid {RULE};border-left:4px solid {COLOUR[state]};
       margin-bottom:14px">
       <div style="padding:12px 14px">
         <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;
           color:{COLOUR[state]};font-weight:bold">{LABEL[state]}</div>
-        <div style="font-weight:bold;font-size:17px;margin-top:3px">{j['addr']}</div>
-        <div style="font-size:13px;color:{GREY}">PO {j['po']} &middot; booked
-          {nice(j['start'])} to {nice(j['finish'])}</div>
+        <div style="font-weight:bold;font-size:17px;margin-top:3px">{_link(j)}</div>
+        <div style="font-size:13px;color:{GREY}">PO {j['po']}{" &middot; job " + j['job_ref'] if j.get('job_ref') else ""}
+          &middot; booked {nice(j['start'])} to {nice(j['finish'])}</div>
         {detail}
       </div>{cascade_html}</div>"""
+
+
+def _link(j):
+    """Address as a link straight into the Pulse job. Falls back to plain text."""
+    claim = j.get("claim_id")
+    if not claim:
+        return j.get("addr") or ""
+    url = PULSE_JOB_URL.format(claim_id=claim)
+    parts = [p for p in (j.get("job_type"), j.get("job_ref"),
+                         ", ".join(x for x in (j.get("addr"), j.get("suburb")) if x))
+             if p]
+    text = " | ".join(parts) or "Open job"
+    return (f'<a href="{url}" style="color:{TEAL};text-decoration:none;'
+            f'border-bottom:1px solid {TEAL}">{text}</a>')
+
+
+def _suggest_block(opt):
+    """
+    Replacement trades from the scorecard. Ranked, not chosen - reallocation is
+    a commercial decision and an email is not the place to make it.
+    """
+    picks = (opt or {}).get("picks") or []
+    ctx = (opt or {}).get("context") or {}
+    if not picks:
+        return ""
+
+    rows = ""
+    for p in picks:
+        contact = " &middot; ".join(x for x in (p.get("phone"), p.get("email")) if x)
+        rows += f"""<tr><td style="padding:8px 0;font-size:13px;
+          border-bottom:1px solid {RULE}">
+          <b>{p['name']}</b>
+          <span style="color:#008065;font-size:11px;letter-spacing:.06em;
+            text-transform:uppercase"> &middot; {p['why']}</span>
+          {f'<div style="color:{GREY};margin-top:2px">{p["detail"]}</div>' if p.get("detail") else ""}
+          {f'<div style="margin-top:2px">{contact}</div>' if contact else ""}
+        </td></tr>"""
+
+    head = "Trades who could pick this up"
+    if ctx.get("trade") and not ctx.get("matched"):
+        head += f" (nearest match: {ctx['trade']})"
+
+    foot = "Ranked from the vendor scorecard. Compliance and zone checks applied."
+    if ctx.get("zone"):
+        foot = f"{ctx['zone']}"
+        if ctx.get("vendors_in_zone"):
+            foot += f" &middot; {ctx['vendors_in_zone']} vendors in zone"
+
+    return f"""<div style="padding:12px 14px;background:{TEALWASH};
+      border-top:1px solid {RULE}">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+        color:#008065;font-weight:bold;margin-bottom:6px">{head}</div>
+      <table style="width:100%;border-collapse:collapse">{rows}</table>
+      <div style="margin-top:8px;font-size:12px;color:{GREY}">{foot}</div>
+    </div>"""
 
 
 def _cascade_block(impact):
@@ -217,4 +301,5 @@ def _cascade_block(impact):
         font-weight:bold;margin-bottom:6px">If you accept, {len(hit)} trade{'s' if len(hit) != 1 else ''} move{'' if len(hit) != 1 else 's'}</div>
       <table style="width:100%;border-collapse:collapse">{lines}</table>
       {pc_line}{absorbed_line}</div>"""
+
 
